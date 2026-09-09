@@ -147,12 +147,6 @@ function renderStats() {
   document.querySelector('#goals-against').textContent = summary.goalsAgainst;
   document.querySelector('#recent-form').innerHTML = `<span>시즌 전적</span><b class="form-dot">${summary.wins}승</b><b class="form-dot d">${summary.draws}무</b><b class="form-dot l">${summary.losses}패</b>`;
   document.querySelector('#player-total').textContent = `등록 선수 ${data.players.length}명`;
-  const quality = document.querySelector('#record-quality');
-  const notes = data.qualityNotes || [];
-  quality.hidden = !notes.length;
-  quality.innerHTML = notes.length ? `<summary>원본 기록의 집계 차이 확인 <span>${notes.length}건</span></summary><ul>${notes.map(note => `<li>${escapeHtml(note)}</li>`).join('')}</ul><p>원본 수식이나 값을 수정하지 않고, 각 표의 기록을 그대로 표시했습니다.</p>` : '';
-  const individualGoals = data.players.reduce((total, player) => total + player.goals, 0);
-  document.querySelector('#records-note').textContent = individualGoals === summary.goalsFor ? `${sourceCaption()} · 팀 기록과 선수 기록 원본값을 표시합니다.` : `팀 득점 ${summary.goalsFor}골은 팀 기록 원본값이며, 선수별 득점 합계는 ${individualGoals}골입니다. 차이는 원본 그대로 유지했습니다.`;
 }
 
 function showKit() {
