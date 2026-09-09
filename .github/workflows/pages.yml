@@ -46,9 +46,9 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
         run: |
           python - <<'PY'
-          from datetime import date, datetime, timezone
+          from datetime import datetime, timezone
           import os
-          due = os.environ['EVENT_NAME'] != 'schedule' or datetime.now(timezone.utc).date() >= date(2026, 9, 12)
+          due = os.environ['EVENT_NAME'] != 'schedule' or datetime.now(timezone.utc) >= datetime(2026, 9, 12, 13, tzinfo=timezone.utc)
           with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
               print(f'due={str(due).lower()}', file=output)
           if not due:
