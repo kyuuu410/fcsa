@@ -16,7 +16,7 @@ function formatDate(value) { return value.slice(0, 10).replaceAll('-', '. '); }
 function weekday(value) { return new Intl.DateTimeFormat('ko-KR', {weekday: 'long', timeZone: 'UTC'}).format(new Date(`${value}T12:00:00Z`)); }
 function percent(value) { return value == null ? '—' : `${(value * 100).toFixed(1)}%`; }
 function role(player) { return positionLabels[player.position] || player.position; }
-function sourceCaption() { return `${data.season} 시즌 · ${formatDate(data.source.modifiedAt)} 원본 기준`; }
+function sourceCaption() { return `${data.season} 시즌 · ${formatDate(data.source.modifiedAt)} 기록 기준`; }
 
 function openDialog(content, type = 'detail') {
   if (!dialog.open) previouslyFocused = document.activeElement;
@@ -58,7 +58,7 @@ function renderStrip() {
   document.querySelector('#latest-record').innerHTML = content;
   document.querySelector('#season-summary').textContent = `${data.summary.wins}승 ${data.summary.draws}무 ${data.summary.losses}패`;
   document.querySelector('#season-games').textContent = data.summary.played;
-  document.querySelector('#source-status').textContent = `${formatDate(data.source.modifiedAt)} 원본 · ${formatDate(data.source.importedAt)} 반영`;
+  document.querySelector('#source-status').textContent = `기록 기준 ${formatDate(data.source.modifiedAt)} · 업데이트 ${formatDate(data.source.importedAt)}`;
 }
 
 function renderRecordPagination(length) {
@@ -91,7 +91,7 @@ function showDate(date) {
   if (!record) return;
   const performances = data.players.map(player => ({player, match: player.matchRecords.find(item => item.date === date)})).filter(item => item.match && (item.match.attended === true || item.match.attended === null || item.match.goals > 0 || item.match.assists > 0));
   const performanceRows = performances.map(({player, match}) => `<tr><th scope="row"><button class="inline-player" data-player-id="${escapeHtml(player.id)}">${escapeHtml(player.name)} <small>${player.number}</small></button></th><td>${match.attended === true ? '출전' : match.attended === null ? '미확인' : '미표기'}</td><td>${match.goals}</td><td>${match.assists}</td></tr>`).join('');
-  openDialog(`<span class="source-badge">원본 기록</span><h2 id="dialog-title">${formatDate(date)}<br><span class="dialog-subtitle">${weekday(date)} · FCSA 경기 기록</span></h2><div class="dialog-stats"><div><b>${record.participants}</b><span>참여 인원</span></div><div><b>${record.goals}</b><span>득점 기록</span></div><div><b>${record.assists}</b><span>도움 기록</span></div></div><p class="source-explanation">해당 날짜의 상대팀·최종 스코어는 원본에 없습니다. 아래는 출장·득점·도움 시트의 기록입니다.</p><div class="table-scroll"><table class="detail-table"><thead><tr><th>선수</th><th>출장 표기</th><th>득점</th><th>도움</th></tr></thead><tbody>${performanceRows || '<tr><td colspan="4">표시할 선수 기록이 없습니다.</td></tr>'}</tbody></table></div><p class="source-explanation">${escapeHtml(sourceCaption())}</p>`);
+  openDialog(`<span class="source-badge">날짜별 기록</span><h2 id="dialog-title">${formatDate(date)}<br><span class="dialog-subtitle">${weekday(date)} · FCSA 경기 기록</span></h2><div class="dialog-stats"><div><b>${record.participants}</b><span>참여 인원</span></div><div><b>${record.goals}</b><span>득점 기록</span></div><div><b>${record.assists}</b><span>도움 기록</span></div></div><p class="source-explanation">출전·득점·도움 기록입니다. 상대팀과 최종 스코어는 미등록입니다.</p><div class="table-scroll"><table class="detail-table"><thead><tr><th>선수</th><th>출장 표기</th><th>득점</th><th>도움</th></tr></thead><tbody>${performanceRows || '<tr><td colspan="4">표시할 선수 기록이 없습니다.</td></tr>'}</tbody></table></div><p class="source-explanation">${escapeHtml(sourceCaption())}</p>`);
   // Reuse the open dialog so closing returns focus to the original match row.
   dialogBody.querySelectorAll('[data-player-id]').forEach(button => button.addEventListener('click', () => {
     showPlayer(button.dataset.playerId);
@@ -101,7 +101,7 @@ function showDate(date) {
 function showOpponent(name) {
   const opponent = data.opponents.find(item => item.name === name);
   if (!opponent) return;
-  openDialog(`<img class="modal-brand crest" src="assets/crest.png" alt="FCSA"><span class="source-badge">${data.season} 시즌 상대별 전적</span><h2 id="dialog-title">FCSA vs ${escapeHtml(opponent.name)}</h2><p>총 ${opponent.wins + opponent.draws + opponent.losses}경기 · 승률 ${percent(opponent.winRate)}</p><div class="dialog-stats"><div><b>${opponent.wins}</b><span>승리</span></div><div><b>${opponent.draws}</b><span>무승부</span></div><div><b>${opponent.losses}</b><span>패배</span></div></div><p class="source-explanation">‘26년 팀 기록’의 상대팀별 누적 전적입니다. 날짜별 상대팀 정보가 없어 개별 날짜와 연결하지 않았습니다.</p>`);
+  openDialog(`<img class="modal-brand crest" src="assets/crest.png" alt="FCSA"><span class="source-badge">${data.season} 시즌 상대별 전적</span><h2 id="dialog-title">FCSA vs ${escapeHtml(opponent.name)}</h2><p>총 ${opponent.wins + opponent.draws + opponent.losses}경기 · 승률 ${percent(opponent.winRate)}</p><div class="dialog-stats"><div><b>${opponent.wins}</b><span>승리</span></div><div><b>${opponent.draws}</b><span>무승부</span></div><div><b>${opponent.losses}</b><span>패배</span></div></div><p class="source-explanation">이번 시즌 상대팀별 합계입니다.</p>`);
 }
 
 function filteredPlayers() {
@@ -125,7 +125,7 @@ function showPlayer(id) {
   if (!player) return;
   const playerMatches = [...player.matchRecords].sort((first, second) => second.date.localeCompare(first.date));
   const rows = playerMatches.map(match => `<tr><th scope="row">${formatDate(match.date)}</th><td>${match.attended === true ? '출전' : match.attended === null ? '미확인' : '미표기'}</td><td>${match.goals}</td><td>${match.assists}</td></tr>`).join('');
-  openDialog(`<span class="source-badge">${data.season} 시즌 선수 기록</span><div class="dialog-player-number">${String(player.number).padStart(2, '0')}</div><h2 id="dialog-title">${escapeHtml(player.name)} <span class="dialog-subtitle">${escapeHtml(player.position)}</span></h2><p>${escapeHtml(role(player))} · ${player.number}번</p><div class="dialog-stats"><div><b>${player.appearances}</b><span>출전</span></div><div><b>${player.goals}</b><span>득점</span></div><div><b>${player.assists}</b><span>도움</span></div></div><div class="player-extra"><span>공격포인트 <b>${player.points}</b></span><span>참석률 <b>${percent(player.attendanceRate)}</b></span></div><details class="player-history"><summary>날짜별 출전·득점·도움 보기 <span>${playerMatches.length}일</span></summary><div class="table-scroll"><table class="detail-table"><thead><tr><th>경기일</th><th>출장 표기</th><th>득점</th><th>도움</th></tr></thead><tbody>${rows}</tbody></table></div></details><p class="source-explanation">${escapeHtml(sourceCaption())}<br>총계는 선수 기록 시트의 값을 그대로 표시합니다.</p>`);
+  openDialog(`<span class="source-badge">${data.season} 시즌 선수 기록</span><div class="dialog-player-number">${String(player.number).padStart(2, '0')}</div><h2 id="dialog-title">${escapeHtml(player.name)} <span class="dialog-subtitle">${escapeHtml(player.position)}</span></h2><p>${escapeHtml(role(player))} · ${player.number}번</p><div class="dialog-stats"><div><b>${player.appearances}</b><span>출전</span></div><div><b>${player.goals}</b><span>득점</span></div><div><b>${player.assists}</b><span>도움</span></div></div><div class="player-extra"><span>공격포인트 <b>${player.points}</b></span><span>참석률 <b>${percent(player.attendanceRate)}</b></span></div><details class="player-history"><summary>날짜별 출전·득점·도움 보기 <span>${playerMatches.length}일</span></summary><div class="table-scroll"><table class="detail-table"><thead><tr><th>경기일</th><th>출장 표기</th><th>득점</th><th>도움</th></tr></thead><tbody>${rows}</tbody></table></div></details><p class="source-explanation">${escapeHtml(sourceCaption())}</p>`);
 }
 
 function renderRanking() {
@@ -150,7 +150,7 @@ function renderStats() {
 }
 
 function showKit() {
-  openDialog('<div class="eyebrow">FCSA · 우리의 유니폼</div><h2 id="dialog-title">유니폼 원본 시안</h2><p>팀에서 제공한 앞면·뒷면 시안입니다. 시안의 이름과 등번호는 실제 선수 정보가 아닙니다.</p><img class="dialog-image" src="assets/kit-original.jpg" alt="FCSA 유니폼 앞면과 뒷면 및 검정 반바지 원본 시안">');
+  openDialog('<div class="eyebrow">FCSA · 유니폼</div><h2 id="dialog-title">유니폼 원본 시안</h2><p>앞면·뒷면 시안입니다. 이름과 등번호는 예시입니다.</p><img class="dialog-image" src="assets/kit-original.jpg" alt="FCSA 유니폼 앞면과 뒷면 및 검정 반바지 원본 시안">');
 }
 
 document.querySelector('#view-kit').addEventListener('click', showKit);
@@ -163,7 +163,7 @@ document.querySelector('#films').addEventListener('click', event => {
   event.preventDefault();
   const title = link.dataset.videoTitle || link.getAttribute('aria-label');
   const caption = link.dataset.publishedAt ? `${videoDate(link.dataset.publishedAt)} 업로드` : 'FC쏘아 채널';
-  openDialog(`<span class="source-badge">FCSA TV · ${escapeHtml(caption)}</span><h2 id="dialog-title">${escapeHtml(title)}</h2><iframe class="dialog-video" src="https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&playsinline=1&rel=0" title="${escapeHtml(title)} 영상" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe><div class="video-actions"><a class="text-link" href="https://www.youtube.com/watch?v=${videoId}" target="_blank" rel="noopener">YouTube에서 보기 ↗</a><span>재생이 안 되면 YouTube에서 볼 수 있어요.</span></div>`, 'video');
+  openDialog(`<span class="source-badge">경기 영상 · ${escapeHtml(caption)}</span><h2 id="dialog-title">${escapeHtml(title)}</h2><iframe class="dialog-video" src="https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&playsinline=1&rel=0" title="${escapeHtml(title)} 영상" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe><div class="video-actions"><a class="text-link" href="https://www.youtube.com/watch?v=${videoId}" target="_blank" rel="noopener">YouTube에서 보기 ↗</a><span>재생이 안 되면 YouTube에서 확인하세요.</span></div>`, 'video');
 });
 
 const videoLayout = document.querySelector('#video-list');
@@ -198,7 +198,7 @@ function renderVideos(feed) {
     const cards = feed.videos.map((video, index) => {
       const attributes = `href="${escapeHtml(video.url)}" target="_blank" rel="noopener" data-video="${video.id}" data-video-title="${escapeHtml(video.title)}" data-published-at="${escapeHtml(video.publishedAt)}" aria-label="${escapeHtml(video.title)} 영상 보기"`;
       const published = `${videoDate(video.publishedAt)} 업로드`;
-      if (index === 0) return `<a class="film-main" ${attributes}><img src="${escapeHtml(video.thumbnail)}" alt="${escapeHtml(video.title)} 썸네일" width="480" height="360" loading="lazy"><span class="play-circle" aria-hidden="true">▷</span><div class="film-main-content"><span class="film-category">최신 업로드 · ${published}</span><h3>${escapeHtml(video.title)}</h3><p>가장 최근에 올라온 우리의 장면.</p></div></a>`;
+      if (index === 0) return `<a class="film-main" ${attributes}><img src="${escapeHtml(video.thumbnail)}" alt="${escapeHtml(video.title)} 썸네일" width="480" height="360" loading="lazy"><span class="play-circle" aria-hidden="true">▷</span><div class="film-main-content"><span class="film-category">최신 업로드 · ${published}</span><h3>${escapeHtml(video.title)}</h3><p>최근 업로드 영상</p></div></a>`;
       return `<a class="film-small" ${attributes}><div class="film-thumb match-thumb"><img src="${escapeHtml(video.thumbnail)}" alt="" width="480" height="360" loading="lazy"></div><div><small>${published}</small><h3>${escapeHtml(video.title)}</h3><span class="film-hint">영상 보기 ▷</span></div></a>`;
     });
     videoLayout.innerHTML = `${cards[0]}${cards.length > 1 ? `<div class="film-side">${cards.slice(1).join('')}</div>` : ''}`;
@@ -210,7 +210,7 @@ function renderVideos(feed) {
     }
   }
   const stale = Date.now() - Date.parse(feed.fetchedAt) > 2 * 60 * 60 * 1000;
-  videoStatus.textContent = `${stale ? '업데이트가 지연되어 마지막으로 확인한 영상을 표시합니다. · ' : ''}최근 영상 ${feed.videos.length}개 · 마지막 확인 ${videoDate(feed.fetchedAt, true)}`;
+  videoStatus.textContent = `${stale ? '영상 업데이트 지연 · ' : ''}최근 영상 ${feed.videos.length}개 · 마지막 확인 ${videoDate(feed.fetchedAt, true)}`;
 }
 
 async function refreshVideos() {
@@ -227,7 +227,7 @@ async function refreshVideos() {
     validateVideos(feed);
     renderVideos(feed);
   } catch (error) {
-    videoStatus.textContent = '최신 목록을 확인하지 못해 이전 영상을 표시하고 있어요. 잠시 후 다시 확인합니다.';
+    videoStatus.textContent = '영상 업데이트 지연 · 기존 목록을 표시합니다.';
     console.warn('Unable to refresh FCSA videos:', error.message);
   } finally {
     clearTimeout(timeout);
