@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "channelId": "UCRAyNAfsPxvbI3Kd1xRntfQ",
+  "channelName": "FC쏘아",
+  "channelUrl": "https://www.youtube.com/@FC%EC%8F%98%EC%95%84",
+  "fetchedAt": "2026-09-09T02:57:01.001621Z",
+  "videos": [
+    {
+      "id": "Dy5-AI1nZ08",
+      "title": "20260905 FC 쏘아 vs FC 가락 4쿼터",
+      "publishedAt": "2026-09-06T02:48:38Z",
+      "updatedAt": "2026-09-06T03:03:34Z",
+      "url": "https://www.youtube.com/watch?v=Dy5-AI1nZ08",
+      "thumbnail": "https://i.ytimg.com/vi/Dy5-AI1nZ08/hqdefault.jpg"
+    },
+    {
+      "id": "_-MLBTkW4V8",
+      "title": "20260905 FC 쏘아 vs FC 가락 3쿼터",
+      "publishedAt": "2026-09-05T20:39:00Z",
+      "updatedAt": "2026-09-06T15:19:31Z",
+      "url": "https://www.youtube.com/watch?v=_-MLBTkW4V8",
+      "thumbnail": "https://i.ytimg.com/vi/_-MLBTkW4V8/hqdefault.jpg"
+    },
+    {
+      "id": "LTIp177ZPJ4",
+      "title": "20260905 FC 쏘아 vs FC 가락 2쿼터",
+      "publishedAt": "2026-09-05T17:13:51Z",
+      "updatedAt": "2026-09-05T17:29:59Z",
+      "url": "https://www.youtube.com/watch?v=LTIp177ZPJ4",
+      "thumbnail": "https://i.ytimg.com/vi/LTIp177ZPJ4/hqdefault.jpg"
+    },
+    {
+      "id": "XDNG4mQ2mXE",
+      "title": "20260905 FC 쏘아 vs FC 가락 1쿼터",
+      "publishedAt": "2026-09-05T16:02:16Z",
+      "updatedAt": "2026-09-06T01:03:51Z",
+      "url": "https://www.youtube.com/watch?v=XDNG4mQ2mXE",
+      "thumbnail": "https://i.ytimg.com/vi/XDNG4mQ2mXE/hqdefault.jpg"
+    }
+  ]
+}

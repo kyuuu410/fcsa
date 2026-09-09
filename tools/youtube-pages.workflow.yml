@@ -1,0 +1,78 @@
+# Copy to .github/workflows/pages.yml after selecting the repository and enabling Pages.
+name: Update videos and publish FCSA
+
+on:
+  push:
+  workflow_dispatch:
+    inputs:
+      use_saved_videos:
+        description: 'Use the saved video list without fetching YouTube for this manual deployment'
+        type: boolean
+        required: false
+        default: false
+  schedule:
+    - cron: '17 * * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fcsa-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Verify video updater
+        run: python -m unittest discover -s tools -p 'test_update_videos.py'
+      - name: Fetch current channel videos
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.use_saved_videos == true) }}
+        run: python tools/update_videos.py
+      # A failed fetch stops this build and leaves the previous deployment in place.
+      - name: Use saved channel videos for this manual deployment
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.use_saved_videos == true }}
+        run: echo '::warning::YouTube refresh was explicitly skipped. Publishing the saved data/videos.json for this manual deployment.'
+      - name: Prepare public site files
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import shutil
+          target = Path('_site')
+          target.mkdir()
+          for name in ('index.html', 'app.js'):
+              shutil.copy2(name, target / name)
+          for name in ('assets', 'data'):
+              shutil.copytree(name, target / name)
+          PY
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Publish site
+        id: deployment
+        uses: actions/deploy-pages@v4

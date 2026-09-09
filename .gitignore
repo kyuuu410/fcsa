@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+_site/
+.env
+.env.*
+*.xlsx
+*.xls
