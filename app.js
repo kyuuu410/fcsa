@@ -1,6 +1,7 @@
 'use strict';
 
 const data = window.FCSA_RECORDS;
+const matchResults = window.FCSA_MATCH_RESULTS;
 const pageSize = 8;
 const positionLabels = {GK: '골키퍼', DF: '수비수', MF: '미드필더', FW: '공격수'};
 const state = {recordView: 'dates', month: 'all', recordPage: 1, position: 'all', search: '', playerPage: 1, ranking: 'goals'};
@@ -17,6 +18,34 @@ function weekday(value) { return new Intl.DateTimeFormat('ko-KR', {weekday: 'lon
 function percent(value) { return value == null ? '—' : `${(value * 100).toFixed(1)}%`; }
 function role(player) { return positionLabels[player.position] || player.position; }
 function sourceCaption() { return `${data.season} 시즌 · ${formatDate(data.source.modifiedAt)} 기록 기준`; }
+
+function isInstagramUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && (url.hostname === 'instagram.com' || url.hostname === 'www.instagram.com');
+  } catch {
+    return false;
+  }
+}
+
+function confirmedMatches() {
+  if (!matchResults || !Array.isArray(matchResults.matches)) return [];
+  return matchResults.matches.filter(match => match && typeof match === 'object'
+    && /^\d{4}-\d{2}-\d{2}$/.test(match.date) && match.date.slice(0, 4) === String(data.season)
+    && typeof match.opponent === 'string' && match.opponent.trim()
+    && Number.isInteger(match.goalsFor) && match.goalsFor >= 0
+    && Number.isInteger(match.goalsAgainst) && match.goalsAgainst >= 0);
+}
+
+function matchForDate(date) {
+  return confirmedMatches().find(match => match.date === date);
+}
+
+function matchResult(match) {
+  if (match.goalsFor > match.goalsAgainst) return {label: '승', className: 'win'};
+  if (match.goalsFor < match.goalsAgainst) return {label: '패', className: 'loss'};
+  return {label: '무', className: 'draw'};
+}
 
 function openDialog(content, type = 'detail') {
   if (!dialog.open) previouslyFocused = document.activeElement;
@@ -51,10 +80,13 @@ function bindPlayerButtons(container) {
 }
 
 function renderStrip() {
-  const latest = [...data.dates].sort((first, second) => second.date.localeCompare(first.date))[0];
-  const content = latest
-    ? `<div class="strip-label"><b>최근 경기 기록</b>${formatDate(latest.date)} · ${weekday(latest.date)}</div><div class="mini-score"><span class="mini-team"><img class="crest" src="assets/crest.png" alt="" width="35" height="35">FCSA</span><strong class="num">${latest.goals}<small>득점</small></strong><span class="mini-team">${latest.participants}명 참여</span></div>`
-    : '<p>등록된 경기 기록이 없습니다.</p>';
+  const latestMatch = [...confirmedMatches()].sort((first, second) => second.date.localeCompare(first.date))[0];
+  const latestRecord = [...data.dates].sort((first, second) => second.date.localeCompare(first.date))[0];
+  const content = latestMatch
+    ? `<div class="strip-label"><b>최근 경기 결과</b>${formatDate(latestMatch.date)} · ${weekday(latestMatch.date)}</div><div class="mini-score"><span class="mini-team"><img class="crest" src="assets/crest.png" alt="" width="35" height="35">FCSA</span><strong class="num">${latestMatch.goalsFor} : ${latestMatch.goalsAgainst}</strong><span class="mini-team">${escapeHtml(latestMatch.opponent)}</span></div>`
+    : latestRecord
+      ? `<div class="strip-label"><b>최근 팀원 기록</b>${formatDate(latestRecord.date)} · ${weekday(latestRecord.date)}</div><div class="mini-score"><span class="mini-team"><img class="crest" src="assets/crest.png" alt="" width="35" height="35">FCSA</span><strong class="num">${latestRecord.goals}<small>팀원 득점</small></strong><span class="mini-team">${latestRecord.participants}명 참여</span></div>`
+      : '<p>등록된 경기 기록이 없습니다.</p>';
   document.querySelector('#latest-record').innerHTML = content;
   document.querySelector('#season-summary').textContent = `${data.summary.wins}승 ${data.summary.draws}무 ${data.summary.losses}패`;
   document.querySelector('#season-games').textContent = data.summary.played;
@@ -75,7 +107,12 @@ function renderRecords() {
   if (state.recordView === 'dates') {
     const dates = data.dates.filter(item => state.month === 'all' || item.date.slice(0, 7) === state.month).sort((first, second) => second.date.localeCompare(first.date));
     renderRecordPagination(dates.length);
-    rows = dates.slice((state.recordPage - 1) * pageSize, state.recordPage * pageSize).map(item => `<button class="date-row" data-date="${item.date}" aria-label="${formatDate(item.date)} ${weekday(item.date)}, ${item.participants}명 참여, ${item.goals}득점, 상세 기록 보기"><span class="date-label">${formatDate(item.date)}<small>${weekday(item.date)} · 경기 기록</small></span><span class="fixture-team"><img class="crest" src="assets/crest.png" alt="" width="32" height="32">FCSA</span><span class="date-metric"><b>${item.participants}</b><small>참여 인원</small></span><span class="date-metric"><b>${item.goals}</b><small>득점 기록</small></span><span class="date-metric"><b>${item.assists}</b><small>도움 기록</small></span><span aria-hidden="true">↗</span></button>`).join('');
+    rows = dates.slice((state.recordPage - 1) * pageSize, state.recordPage * pageSize).map(item => {
+      const match = matchForDate(item.date);
+      if (!match) return `<button class="date-row" data-date="${item.date}" aria-label="${formatDate(item.date)} ${weekday(item.date)}, 팀원 ${item.participants}명 참여, 팀원 ${item.goals}득점, 상세 기록 보기"><span class="date-label">${formatDate(item.date)}<small>${weekday(item.date)} · 팀원 기록</small></span><span class="fixture-team"><img class="crest" src="assets/crest.png" alt="" width="32" height="32">FCSA</span><span class="date-metric"><b>${item.participants}</b><small>팀원 참여</small></span><span class="date-metric"><b>${item.goals}</b><small>팀원 득점</small></span><span class="date-metric"><b>${item.assists}</b><small>팀원 도움</small></span><span aria-hidden="true">↗</span></button>`;
+      const result = matchResult(match);
+      return `<button class="fixture-row" data-date="${item.date}" aria-label="${formatDate(item.date)} ${weekday(item.date)}, FCSA ${match.goalsFor} 대 ${match.goalsAgainst} ${escapeHtml(match.opponent)}, ${result.label}, 상세 기록 보기"><span class="fixture-date">${formatDate(item.date)}<small>${weekday(item.date)} · 경기 종료</small></span><span class="fixture-team home"><img class="crest" src="assets/crest.png" alt="" width="34" height="34">FCSA</span><strong class="score">${match.goalsFor} : ${match.goalsAgainst}</strong><span class="fixture-team">${escapeHtml(match.opponent)}</span><span class="result-badge ${result.className}" aria-label="경기 결과 ${result.label}">${result.label}</span></button>`;
+    }).join('');
   } else {
     const opponents = [...data.opponents].sort((first, second) => (second.wins + second.draws + second.losses) - (first.wins + first.draws + first.losses));
     renderRecordPagination(opponents.length);
@@ -89,9 +126,16 @@ function renderRecords() {
 function showDate(date) {
   const record = data.dates.find(item => item.date === date);
   if (!record) return;
+  const match = matchForDate(date);
   const performances = data.players.map(player => ({player, match: player.matchRecords.find(item => item.date === date)})).filter(item => item.match && (item.match.attended === true || item.match.attended === null || item.match.goals > 0 || item.match.assists > 0));
   const performanceRows = performances.map(({player, match}) => `<tr><th scope="row"><button class="inline-player" data-player-id="${escapeHtml(player.id)}">${escapeHtml(player.name)} <small>${player.number}</small></button></th><td>${match.attended === true ? '출전' : match.attended === null ? '미확인' : '미표기'}</td><td>${match.goals}</td><td>${match.assists}</td></tr>`).join('');
-  openDialog(`<span class="source-badge">날짜별 기록</span><h2 id="dialog-title">${formatDate(date)}<br><span class="dialog-subtitle">${weekday(date)} · FCSA 경기 기록</span></h2><div class="dialog-stats"><div><b>${record.participants}</b><span>참여 인원</span></div><div><b>${record.goals}</b><span>득점 기록</span></div><div><b>${record.assists}</b><span>도움 기록</span></div></div><p class="source-explanation">출전·득점·도움 기록입니다. 상대팀과 최종 스코어는 미등록입니다.</p><div class="table-scroll"><table class="detail-table"><thead><tr><th>선수</th><th>출장 표기</th><th>득점</th><th>도움</th></tr></thead><tbody>${performanceRows || '<tr><td colspan="4">표시할 선수 기록이 없습니다.</td></tr>'}</tbody></table></div><p class="source-explanation">${escapeHtml(sourceCaption())}</p>`);
+  const result = match ? matchResult(match) : null;
+  const officialScore = match ? `<div class="dialog-score"><span class="fixture-team"><img class="crest" src="assets/crest.png" alt="" width="65" height="65">FCSA</span><strong>${match.goalsFor} : ${match.goalsAgainst}</strong><span class="fixture-team">${escapeHtml(match.opponent)}</span><span class="result-badge ${result.className}" aria-label="경기 결과 ${result.label}">${result.label}</span></div>` : '';
+  const sourceLink = match && isInstagramUrl(match.sourceUrl) ? `<p class="source-explanation"><a class="text-link" href="${escapeHtml(match.sourceUrl)}" target="_blank" rel="noopener noreferrer">인스타그램에서 결과 보기 ↗</a></p>` : '';
+  const explanation = match
+    ? '최종 스코어에는 용병 득점이 포함됩니다. 개인 기록은 팀원 기준입니다.'
+    : '팀원 출전·득점·도움 기록입니다. 경기 결과는 아직 등록되지 않았습니다.';
+  openDialog(`<span class="source-badge">${match ? '경기 결과' : '날짜별 팀원 기록'}</span><h2 id="dialog-title">${formatDate(date)}<br><span class="dialog-subtitle">${weekday(date)} · FCSA 경기 기록</span></h2>${officialScore}${sourceLink}<div class="dialog-stats"><div><b>${record.participants}</b><span>팀원 참여</span></div><div><b>${record.goals}</b><span>팀원 득점</span></div><div><b>${record.assists}</b><span>팀원 도움</span></div></div><p class="source-explanation">${escapeHtml(explanation)}</p><div class="table-scroll"><table class="detail-table"><thead><tr><th>선수</th><th>출장 표기</th><th>득점</th><th>도움</th></tr></thead><tbody>${performanceRows || '<tr><td colspan="4">표시할 선수 기록이 없습니다.</td></tr>'}</tbody></table></div><p class="source-explanation">${escapeHtml(sourceCaption())}</p>`);
   // Reuse the open dialog so closing returns focus to the original match row.
   dialogBody.querySelectorAll('[data-player-id]').forEach(button => button.addEventListener('click', () => {
     showPlayer(button.dataset.playerId);
