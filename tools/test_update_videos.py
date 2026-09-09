@@ -25,6 +25,30 @@ def fixture(count=5):
 {''.join(entries)}</feed>""").encode("utf-8")
 
 
+def snapshot(fetched_at="2026-09-09T12:34:56.789+00:00"):
+    result = updater.parse_feed(fixture(2))
+    result["fetchedAt"] = fetched_at
+    return result
+
+
+class FakeResponse:
+    def __init__(self, content, url=None):
+        self.content = content
+        self.url = url
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def geturl(self):
+        return self.url
+
+    def read(self, limit):
+        return self.content[:limit]
+
+
 class VideoUpdateTests(unittest.TestCase):
     def test_latest_four_sorted_by_publication(self):
         result = updater.parse_feed(fixture())
@@ -93,6 +117,64 @@ class VideoUpdateTests(unittest.TestCase):
                         updater.update_videos(output)
                     self.assertEqual(mocked.call_args.kwargs["timeout"], 20)
                     self.assertEqual(output.read_bytes(), b"existing output")
+
+    def test_restore_published_preserves_original_fetched_at(self):
+        published = snapshot()
+        content = json.dumps(published, ensure_ascii=False).encode("utf-8")
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "videos.json"
+
+            def respond(request, timeout):
+                self.assertEqual(timeout, updater.TIMEOUT_SECONDS)
+                self.assertEqual(request.headers["Cache-control"], "no-cache")
+                self.assertTrue(request.full_url.startswith(f"{updater.PUBLISHED_URL}?cacheBust="))
+                return FakeResponse(content, request.full_url)
+
+            with patch.object(updater, "urlopen", side_effect=respond):
+                result = updater.update_videos(output, restore_published=True)
+            self.assertEqual(result["fetchedAt"], "2026-09-09T12:34:56.789+00:00")
+            self.assertEqual(json.loads(output.read_text(encoding="utf-8"))["fetchedAt"], result["fetchedAt"])
+
+    def test_invalid_published_snapshots_preserve_existing_file(self):
+        valid = snapshot()
+        cases = {}
+        wrong_channel = json.loads(json.dumps(valid))
+        wrong_channel["channelId"] = "UCwrong000000000000000000"
+        cases["wrong channel"] = wrong_channel
+        wrong_url = json.loads(json.dumps(valid))
+        wrong_url["videos"][0]["url"] = "https://www.youtube.com/watch?v=video000000&private=1"
+        cases["wrong URL"] = wrong_url
+        duplicate = json.loads(json.dumps(valid))
+        duplicate["videos"][1] = json.loads(json.dumps(duplicate["videos"][0]))
+        cases["duplicate ID"] = duplicate
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "videos.json"
+            for name, candidate in {**cases, "malformed": None}.items():
+                with self.subTest(name=name):
+                    output.write_bytes(b"existing output")
+                    content = b"{" if candidate is None else json.dumps(candidate).encode("utf-8")
+                    with patch.object(updater, "read_published_snapshot", return_value=content):
+                        with self.assertRaises(updater.VideoUpdateError):
+                            updater.update_videos(output, restore_published=True)
+                    self.assertEqual(output.read_bytes(), b"existing output")
+
+    def test_restore_rejects_older_published_snapshot(self):
+        current = snapshot("2026-09-10T00:00:00Z")
+        published = snapshot("2026-09-09T23:59:59Z")
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "videos.json"
+            original = (json.dumps(current, ensure_ascii=False) + "\n").encode("utf-8")
+            output.write_bytes(original)
+            with patch.object(updater, "read_published_snapshot", return_value=json.dumps(published).encode("utf-8")):
+                with self.assertRaisesRegex(updater.VideoUpdateError, "older than"):
+                    updater.update_videos(output, restore_published=True)
+            self.assertEqual(output.read_bytes(), original)
+
+    def test_published_redirect_is_rejected(self):
+        with patch.object(updater, "urlopen") as mocked:
+            mocked.return_value = FakeResponse(json.dumps(snapshot()).encode("utf-8"), "https://example.com/videos.json")
+            with self.assertRaisesRegex(updater.VideoUpdateError, "redirected"):
+                updater.read_published_snapshot()
 
     def test_actual_saved_feed_when_available(self):
         source = Path(__file__).resolve().parents[3] / "work" / "fcsa" / "youtube-feed.xml"

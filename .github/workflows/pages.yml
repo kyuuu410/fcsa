@@ -4,6 +4,11 @@ on:
   push:
   workflow_dispatch:
     inputs:
+      sync_records:
+        description: 'Read the private workbook now and publish changed records'
+        type: boolean
+        required: false
+        default: false
       use_saved_videos:
         description: 'Use the saved video list without fetching YouTube for this manual deployment'
         type: boolean
@@ -11,6 +16,8 @@ on:
         default: false
   schedule:
     - cron: '17 * * * *'
+    # Daily at 22:00 Asia/Seoul, beginning September 12, 2026.
+    - cron: '0 13 * * *'
 
 permissions:
   contents: read
@@ -18,10 +25,75 @@ permissions:
 concurrency:
   group: fcsa-pages
   cancel-in-progress: false
+  queue: max
 
 jobs:
+  sync-records:
+    if: >-
+      github.ref_name == github.event.repository.default_branch &&
+      (github.event.schedule == '0 13 * * *' ||
+       (github.event_name == 'workflow_dispatch' && inputs.sync_records == true))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      changed: ${{ steps.records.outputs.changed }}
+    steps:
+      - name: Check the first scheduled date
+        id: window
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          python - <<'PY'
+          from datetime import date, datetime, timezone
+          import os
+          due = os.environ['EVENT_NAME'] != 'schedule' or datetime.now(timezone.utc).date() >= date(2026, 9, 12)
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              print(f'due={str(due).lower()}', file=output)
+          if not due:
+              print('The first scheduled record check is September 12, 2026 at 13:00 UTC.')
+          PY
+      - uses: actions/checkout@v6
+        if: steps.window.outputs.due == 'true'
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - uses: actions/setup-python@v7
+        if: steps.window.outputs.due == 'true'
+        with:
+          python-version: '3.12'
+      - name: Install record sync dependencies
+        if: steps.window.outputs.due == 'true'
+        run: python -m pip install --disable-pip-version-check -r tools/requirements-records.txt
+      - name: Verify record sync
+        if: steps.window.outputs.due == 'true'
+        run: python -m unittest discover -s tools -p 'test_sync_records.py'
+      - name: Read changed private records
+        if: steps.window.outputs.due == 'true'
+        id: records
+        env:
+          FCSA_DRIVE_FILE_ID: ${{ secrets.FCSA_DRIVE_FILE_ID }}
+          FCSA_GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.FCSA_GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: python tools/sync_records.py
+      - name: Save the validated public records
+        if: steps.records.outputs.changed == 'true'
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- data/records.js
+          git commit -m 'Update club records from private workbook'
+          git push origin "HEAD:$DEFAULT_BRANCH"
+      # GITHUB_TOKEN commits do not trigger a push workflow; this run publishes them.
+
   build:
-    if: github.ref_name == github.event.repository.default_branch
+    needs: sync-records
+    if: >-
+      always() && !cancelled() &&
+      github.ref_name == github.event.repository.default_branch &&
+      (needs.sync-records.result == 'skipped' ||
+       (needs.sync-records.result == 'success' && needs.sync-records.outputs.changed == 'true'))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -30,16 +102,29 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
+          # A queued run must not restore the snapshot from its older event SHA.
+          ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - name: Verify video updater
         run: python -m unittest discover -s tools -p 'test_update_videos.py'
+      - name: Install record sync dependencies for code verification
+        if: github.event_name != 'schedule'
+        run: python -m pip install --disable-pip-version-check -r tools/requirements-records.txt
+      - name: Verify record sync code without private credentials
+        if: github.event_name != 'schedule'
+        run: python -m unittest discover -s tools -p 'test_sync_records.py'
       - name: Fetch current channel videos
+        id: videos
         if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.use_saved_videos == true) }}
+        continue-on-error: ${{ needs.sync-records.outputs.changed == 'true' }}
         run: python tools/update_videos.py
-      # A failed fetch stops this build and leaves the previous deployment in place.
+      - name: Preserve published videos while publishing new records
+        if: steps.videos.outcome == 'failure' && needs.sync-records.outputs.changed == 'true'
+        run: python tools/update_videos.py --restore-published
+      # Ordinary video refresh failures still leave the previous deployment in place.
       - name: Use saved channel videos for this manual deployment
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.use_saved_videos == true }}
         run: echo '::warning::YouTube refresh was explicitly skipped. Publishing the saved data/videos.json for this manual deployment.'
@@ -63,6 +148,7 @@ jobs:
 
   deploy:
     needs: build
+    if: always() && !cancelled() && needs.build.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
