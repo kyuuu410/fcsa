@@ -17,7 +17,11 @@ function formatDate(value) { return value.slice(0, 10).replaceAll('-', '. '); }
 function weekday(value) { return new Intl.DateTimeFormat('ko-KR', {weekday: 'long', timeZone: 'UTC'}).format(new Date(`${value}T12:00:00Z`)); }
 function percent(value) { return value == null ? '—' : `${(value * 100).toFixed(1)}%`; }
 function role(player) { return positionLabels[player.position] || player.position; }
-function sourceCaption() { return `${data.season} 시즌 · ${formatDate(data.source.modifiedAt)} 기록 기준`; }
+function sourceCaption() {
+  const date = data.source.modifiedAt || data.source.importedAt;
+  const label = data.source.modifiedAt ? '기록 기준' : '반영 기준';
+  return `${data.season} 시즌 · ${formatDate(date)} ${label}`;
+}
 
 function isInstagramUrl(value) {
   try {
@@ -90,7 +94,8 @@ function renderStrip() {
   document.querySelector('#latest-record').innerHTML = content;
   document.querySelector('#season-summary').textContent = `${data.summary.wins}승 ${data.summary.draws}무 ${data.summary.losses}패`;
   document.querySelector('#season-games').textContent = data.summary.played;
-  document.querySelector('#source-status').textContent = `기록 기준 ${formatDate(data.source.modifiedAt)} · 업데이트 ${formatDate(data.source.importedAt)}`;
+  const sourceDate = data.source.modifiedAt ? `기록 기준 ${formatDate(data.source.modifiedAt)} · ` : '';
+  document.querySelector('#source-status').textContent = `${sourceDate}업데이트 ${formatDate(data.source.importedAt)}`;
 }
 
 function renderRecordPagination(length) {

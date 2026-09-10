@@ -1,4 +1,4 @@
-"""Offline tests for the private Google Drive record synchronizer."""
+"""Offline tests for the public Google Drive record synchronizer."""
 
 from collections import deque
 from datetime import datetime
@@ -18,14 +18,8 @@ import sync_records as sync
 
 ENVIRONMENT = {
     "FCSA_DRIVE_FILE_ID": "valid_drive_file_id_123",
-    "FCSA_GOOGLE_SERVICE_ACCOUNT_JSON": json.dumps(
-        {
-            "type": "service_account",
-            "token_uri": sync.TOKEN_URI,
-            "universe_domain": "googleapis.com",
-        }
-    ),
 }
+LAST_MODIFIED = "Mon, 07 Sep 2026 06:34:39 GMT"
 
 
 def workbook_fixture(*, player_name="테스트 선수", wins=1, cached_formula=True):
@@ -63,17 +57,6 @@ def workbook_fixture(*, player_name="테스트 선수", wins=1, cached_formula=T
     return output.getvalue()
 
 
-def metadata_for(content, *, version="1", sha256=True, md5=True):
-    return sync.DriveMetadata(
-        sync.DRIVE_MIME_TYPE,
-        "2026-09-09T01:02:03.000Z",
-        version,
-        len(content),
-        hashlib.sha256(content).hexdigest() if sha256 else None,
-        hashlib.md5(content).hexdigest() if md5 else None,
-    )
-
-
 def write_records(path, sha256, *, title="승인된 제목.xlsx", imported_at="unchanged-time"):
     records = {
         "source": {"title": title, "sha256": sha256, "importedAt": imported_at},
@@ -86,10 +69,15 @@ def write_records(path, sha256, *, title="승인된 제목.xlsx", imported_at="u
 
 
 class FakeResponse:
-    def __init__(self, url, content):
+    def __init__(self, url, content, headers=None, status=200):
         self.url = url
         self.content = content
-        self.headers = {"Content-Length": str(len(content))}
+        self.status = status
+        self.headers = {
+            "Content-Length": str(len(content)),
+            "Content-Type": "application/octet-stream",
+            **(headers or {}),
+        }
 
     def __enter__(self):
         return self
@@ -111,18 +99,19 @@ class FakeOpener:
 
     def open(self, request, timeout):
         self.requests.append((request, timeout))
-        return FakeResponse(request.full_url, self.responses.popleft())
+        response = self.responses.popleft()
+        if isinstance(response, BaseException):
+            raise response
+        return response
 
 
 class RecordSyncTests(unittest.TestCase):
-    def run_sync(self, output, content, metadata=None):
-        metadata = metadata or metadata_for(content)
-        with (
-            patch.object(sync, "get_access_token", return_value="access-token"),
-            patch.object(sync, "fetch_metadata", side_effect=[metadata, metadata]),
-            patch.object(sync, "download_xlsx", return_value=content),
-        ):
-            return sync.sync_records(output, environment=ENVIRONMENT, sleep=lambda _: None)
+    def response(self, content, *, url="https://drive.usercontent.google.com/download", headers=None):
+        return FakeResponse(url, content, {"Last-Modified": LAST_MODIFIED, **(headers or {})})
+
+    def run_sync(self, output, content, *, headers=None):
+        opener = FakeOpener([self.response(content, headers=headers)])
+        return sync.sync_records(output, environment=ENVIRONMENT, opener=opener, sleep=lambda _: None)
 
     def test_changed_workbook_updates_member_and_team_records(self):
         content = workbook_fixture(player_name="새 선수", wins=0)
@@ -139,25 +128,14 @@ class RecordSyncTests(unittest.TestCase):
         self.assertEqual(records["source"]["title"], "승인된 제목.xlsx")
         self.assertEqual(records["source"]["sha256"], hashlib.sha256(content).hexdigest())
 
-    def test_full_drive_transport_path_updates_then_short_circuits(self):
+    def test_public_transport_updates_then_downloads_and_short_circuits(self):
         content = workbook_fixture(player_name="전송 경로 선수")
-        metadata = {
-            "mimeType": sync.DRIVE_MIME_TYPE,
-            "modifiedTime": "2026-09-09T01:02:03.000Z",
-            "version": "42",
-            "size": str(len(content)),
-            "sha256Checksum": hashlib.sha256(content).hexdigest(),
-            "md5Checksum": hashlib.md5(content).hexdigest(),
-            "trashed": False,
-            "capabilities": {"canDownload": True},
-        }
-        metadata_json = json.dumps(metadata).encode("utf-8")
-        opener = FakeOpener([metadata_json, content, metadata_json, metadata_json])
+        opener = FakeOpener([self.response(content), self.response(content)])
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "records.js"
-            with patch.object(sync, "get_access_token", return_value="access-token"):
-                changed = sync.sync_records(output, environment=ENVIRONMENT, opener=opener, sleep=lambda _: None)
-                original = output.read_bytes()
+            changed = sync.sync_records(output, environment=ENVIRONMENT, opener=opener, sleep=lambda _: None)
+            original = output.read_bytes()
+            with patch.object(sync, "import_records") as import_mock:
                 unchanged = sync.sync_records(output, environment=ENVIRONMENT, opener=opener, sleep=lambda _: None)
             records = sync.read_existing_records(output)
             self.assertEqual(output.read_bytes(), original)
@@ -165,88 +143,77 @@ class RecordSyncTests(unittest.TestCase):
         self.assertTrue(changed.changed)
         self.assertFalse(unchanged.changed)
         self.assertEqual(records["players"][0]["name"], "전송 경로 선수")
-        self.assertEqual(len(opener.requests), 4)
-        self.assertTrue(all(request.get_method() == "GET" for request, _timeout in opener.requests))
-        self.assertTrue(all(request.get_header("Authorization") == "Bearer access-token" for request, _timeout in opener.requests))
-        self.assertTrue(all(timeout == sync.TIMEOUT_SECONDS for _request, timeout in opener.requests))
-
-    def test_metadata_sha_short_circuits_without_download_or_import(self):
-        content = workbook_fixture()
-        source_hash = hashlib.sha256(content).hexdigest()
-        with tempfile.TemporaryDirectory() as directory:
-            output = Path(directory) / "records.js"
-            records = write_records(output, source_hash)
-            original = output.read_bytes()
-            with (
-                patch.object(sync, "get_access_token", return_value="access-token"),
-                patch.object(sync, "fetch_metadata", return_value=metadata_for(content)) as metadata_mock,
-                patch.object(sync, "download_xlsx") as download_mock,
-                patch.object(sync, "import_records") as import_mock,
-            ):
-                result = sync.sync_records(output, environment=ENVIRONMENT, sleep=lambda _: None)
-            self.assertEqual(output.read_bytes(), original)
-        self.assertFalse(result.changed)
-        self.assertEqual(result.player_count, len(records["players"]))
-        metadata_mock.assert_called_once()
-        download_mock.assert_not_called()
+        self.assertEqual(records["source"]["modifiedAt"], "2026-09-07T06:34:39+00:00")
         import_mock.assert_not_called()
+        self.assertEqual(len(opener.requests), 2)
+        for request, timeout in opener.requests:
+            self.assertEqual(request.get_method(), "GET")
+            self.assertEqual(request.full_url, f"https://drive.google.com/uc?export=download&id={ENVIRONMENT['FCSA_DRIVE_FILE_ID']}")
+            self.assertIsNone(request.get_header("Authorization"))
+            self.assertIsNone(request.get_header("Cookie"))
+            self.assertEqual(request.get_header("Cache-control"), "no-cache")
+            self.assertEqual(request.get_header("Pragma"), "no-cache")
+            self.assertEqual(timeout, sync.TIMEOUT_SECONDS)
 
-    def test_md5_only_download_with_same_sha_does_not_reimport(self):
+    def test_missing_or_invalid_last_modified_is_preserved_as_unknown(self):
         content = workbook_fixture()
-        source_hash = hashlib.sha256(content).hexdigest()
-        metadata = metadata_for(content, sha256=False)
-        with tempfile.TemporaryDirectory() as directory:
-            output = Path(directory) / "records.js"
-            write_records(output, source_hash)
-            original = output.read_bytes()
-            with (
-                patch.object(sync, "get_access_token", return_value="access-token"),
-                patch.object(sync, "fetch_metadata", side_effect=[metadata, metadata]),
-                patch.object(sync, "download_xlsx", return_value=content),
-                patch.object(sync, "import_records") as import_mock,
-            ):
-                result = sync.sync_records(output, environment=ENVIRONMENT, sleep=lambda _: None)
-            self.assertEqual(output.read_bytes(), original)
-        self.assertFalse(result.changed)
-        import_mock.assert_not_called()
+        cases = [None, "not a date"]
+        for value in cases:
+            headers = {"Last-Modified": value} if value is not None else {}
+            with self.subTest(value=value), tempfile.TemporaryDirectory() as directory:
+                output = Path(directory) / "records.js"
+                opener = FakeOpener([FakeResponse("https://drive.usercontent.google.com/download", content, headers)])
+                sync.sync_records(output, environment=ENVIRONMENT, opener=opener, sleep=lambda _: None)
+                records = sync.read_existing_records(output)
+                self.assertIsNone(records["source"]["modifiedAt"])
 
-    def test_version_change_during_download_preserves_existing_output(self):
-        content = workbook_fixture()
-        before = metadata_for(content, version="7")
-        after = metadata_for(content, version="8")
-        with tempfile.TemporaryDirectory() as directory:
-            output = Path(directory) / "records.js"
-            write_records(output, "0" * 64)
-            original = output.read_bytes()
-            with (
-                patch.object(sync, "get_access_token", return_value="access-token"),
-                patch.object(sync, "fetch_metadata", side_effect=[before, after]),
-                patch.object(sync, "download_xlsx", return_value=content),
-            ):
-                with self.assertRaisesRegex(sync.RecordSyncError, "changed during"):
-                    sync.sync_records(output, environment=ENVIRONMENT, sleep=lambda _: None)
-            self.assertEqual(output.read_bytes(), original)
-
-    def test_bad_checksum_and_bad_archive_preserve_existing_output(self):
-        valid_content = workbook_fixture()
-        cases = [
-            (valid_content, sync.DriveMetadata(sync.DRIVE_MIME_TYPE, "2026-09-09T01:02:03Z", "1", len(valid_content), "0" * 64, None), "SHA-256"),
-            (b"not an xlsx archive", None, "archive structure"),
+    def test_rejects_unapproved_download_locations(self):
+        allowed = [
+            "https://drive.google.com/uc?export=download&id=x",
+            "https://drive.usercontent.google.com/download?id=x",
         ]
-        for content, metadata, message in cases:
-            metadata = metadata or metadata_for(content)
+        rejected = [
+            "http://drive.google.com/uc?id=x",
+            "https://drive.google.com.evil.example/uc?id=x",
+            "https://user@drive.google.com/uc?id=x",
+            "https://drive.google.com:444/uc?id=x",
+        ]
+        for url in allowed:
+            with self.subTest(url=url):
+                self.assertEqual(sync._validate_download_url(url), url)
+        for url in rejected:
+            with self.subTest(url=url), self.assertRaisesRegex(sync.RecordSyncError, "unapproved"):
+                sync._validate_download_url(url)
+
+        opener = FakeOpener([self.response(workbook_fixture(), url="https://example.invalid/download")])
+        with tempfile.TemporaryDirectory() as directory, self.assertRaisesRegex(sync.RecordSyncError, "unapproved"):
+            sync.sync_records(Path(directory) / "records.js", environment=ENVIRONMENT, opener=opener, sleep=lambda _: None)
+
+    def test_rejects_html_partial_oversized_and_incomplete_responses(self):
+        content = workbook_fixture()
+        cases = [
+            (FakeResponse("https://drive.google.com/uc", b"<html>login</html>", {"Content-Type": "text/html"}), "XLSX download"),
+            (FakeResponse("https://drive.usercontent.google.com/download", content, status=206), "complete download"),
+            (FakeResponse("https://drive.usercontent.google.com/download", content, {"Content-Length": str(sync.MAX_XLSX_BYTES + 1)}), "size limit"),
+            (FakeResponse("https://drive.usercontent.google.com/download", content, {"Content-Length": str(len(content) + 1)}), "incomplete response"),
+        ]
+        for response, message in cases:
             with self.subTest(message=message), tempfile.TemporaryDirectory() as directory:
                 output = Path(directory) / "records.js"
                 write_records(output, "1" * 64)
                 original = output.read_bytes()
-                with (
-                    patch.object(sync, "get_access_token", return_value="access-token"),
-                    patch.object(sync, "fetch_metadata", return_value=metadata),
-                    patch.object(sync, "download_xlsx", return_value=content),
-                ):
-                    with self.assertRaisesRegex(sync.RecordSyncError, message):
-                        sync.sync_records(output, environment=ENVIRONMENT, sleep=lambda _: None)
+                with self.assertRaisesRegex(sync.RecordSyncError, message):
+                    sync.sync_records(output, environment=ENVIRONMENT, opener=FakeOpener([response]), sleep=lambda _: None)
                 self.assertEqual(output.read_bytes(), original)
+
+    def test_bad_archive_preserves_existing_output(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "records.js"
+            write_records(output, "1" * 64)
+            original = output.read_bytes()
+            with self.assertRaisesRegex(sync.RecordSyncError, "archive structure"):
+                self.run_sync(output, b"not an xlsx archive")
+            self.assertEqual(output.read_bytes(), original)
 
     def test_formula_without_cached_value_is_rejected_and_preserves_output(self):
         content = workbook_fixture(cached_formula=False)
@@ -258,46 +225,11 @@ class RecordSyncTests(unittest.TestCase):
                 self.run_sync(output, content)
             self.assertEqual(output.read_bytes(), original)
 
-    def test_authentication_errors_are_sanitized(self):
-        class FailingCredentials:
-            def refresh(self, request):
-                raise RuntimeError("secret@example.com private-key-material")
-
-        def credentials_factory(info, scopes):
-            self.assertEqual(scopes, [sync.DRIVE_SCOPE])
-            return FailingCredentials()
-
-        with self.assertRaises(sync.RecordSyncError) as caught:
-            sync.get_access_token(
-                ENVIRONMENT["FCSA_GOOGLE_SERVICE_ACCOUNT_JSON"],
-                credentials_factory=credentials_factory,
-                request_factory=object,
-            )
-        self.assertEqual(str(caught.exception), "Google service account authentication failed")
-
-    def test_authentication_refresh_uses_bounded_timeout(self):
-        transport = Mock(return_value=object())
-
-        class Credentials:
-            token = "access-token"
-
-            def refresh(self, request):
-                request("https://oauth2.googleapis.com/token", method="POST", timeout=999)
-
-        token = sync.get_access_token(
-            ENVIRONMENT["FCSA_GOOGLE_SERVICE_ACCOUNT_JSON"],
-            credentials_factory=lambda _info, scopes: Credentials(),
-            request_factory=lambda: transport,
-        )
-        self.assertEqual(token, "access-token")
-        self.assertEqual(transport.call_args.kwargs["timeout"], sync.TIMEOUT_SECONDS)
-
-    def test_redirects_and_network_details_are_not_exposed(self):
-        private_id = ENVIRONMENT["FCSA_DRIVE_FILE_ID"]
-        token = "private-access-token"
+    def test_network_failures_retry_without_exposing_details(self):
+        file_id = ENVIRONMENT["FCSA_DRIVE_FILE_ID"]
         secret_detail = "secret@example.com/path"
         cases = [
-            (HTTPError("https://private.example/secret", 302, secret_detail, {}, None), "redirected", 1),
+            (HTTPError("https://private.example/secret", 503, secret_detail, {}, None), "failed with HTTP 503", sync.MAX_ATTEMPTS),
             (URLError(secret_detail), "failed after retries", sync.MAX_ATTEMPTS),
             (HTTPError("https://private.example/secret", 403, secret_detail, {}, None), "HTTP 403", 1),
         ]
@@ -307,49 +239,29 @@ class RecordSyncTests(unittest.TestCase):
             sleeps = []
             try:
                 with self.subTest(expected=expected), self.assertRaises(sync.RecordSyncError) as caught:
-                    sync.drive_get(private_id, token, opener=opener, sleep=sleeps.append)
+                    sync.download_xlsx(file_id, opener=opener, sleep=sleeps.append)
                 message = str(caught.exception)
                 self.assertIn(expected, message)
-                self.assertNotIn(private_id, message)
-                self.assertNotIn(token, message)
+                self.assertNotIn(file_id, message)
                 self.assertNotIn(secret_detail, message)
                 self.assertEqual(opener.open.call_count, attempts)
                 request = opener.open.call_args.args[0]
                 self.assertEqual(request.get_method(), "GET")
-                self.assertEqual(request.get_header("Authorization"), f"Bearer {token}")
+                self.assertIsNone(request.get_header("Authorization"))
                 self.assertEqual(opener.open.call_args.kwargs["timeout"], sync.TIMEOUT_SECONDS)
             finally:
                 if isinstance(failure, HTTPError):
                     failure.close()
 
-    def test_rejects_unapproved_credentials_and_writes_github_output(self):
-        approved = {"type": "service_account", "token_uri": sync.TOKEN_URI, "universe_domain": "googleapis.com"}
-        for field, value in (("type", "authorized_user"), ("token_uri", "https://example.invalid/token"), ("universe_domain", "example.invalid")):
-            bad_info = json.dumps({**approved, field: value})
-            with self.subTest(field=field), self.assertRaisesRegex(sync.RecordSyncError, "not approved"):
-                sync.get_access_token(bad_info, credentials_factory=lambda *_args, **_kwargs: None, request_factory=object)
+    def test_rejects_invalid_file_ids_and_writes_github_output(self):
+        for value in (None, "short", "contains/slash", "contains whitespace"):
+            with self.subTest(value=value), self.assertRaisesRegex(sync.RecordSyncError, "missing or invalid"):
+                sync.sync_records(environment={"FCSA_DRIVE_FILE_ID": value}, opener=Mock())
         with tempfile.TemporaryDirectory() as directory:
             destination = Path(directory) / "github-output"
             sync.write_github_output(True, {"GITHUB_OUTPUT": str(destination)})
             sync.write_github_output(False, {"GITHUB_OUTPUT": str(destination)})
             self.assertEqual(destination.read_text(encoding="utf-8"), "changed=true\nchanged=false\n")
-
-    def test_metadata_rejects_wrong_mime_type_and_disabled_download(self):
-        base = {
-            "mimeType": sync.DRIVE_MIME_TYPE,
-            "modifiedTime": "2026-09-09T01:02:03Z",
-            "version": "1",
-            "size": "1024",
-            "trashed": False,
-            "capabilities": {"canDownload": True},
-        }
-        cases = [
-            ({**base, "mimeType": "application/vnd.google-apps.spreadsheet"}, "not an XLSX"),
-            ({**base, "capabilities": {"canDownload": False}}, "unavailable for download"),
-        ]
-        for metadata, message in cases:
-            with self.subTest(message=message), self.assertRaisesRegex(sync.RecordSyncError, message):
-                sync.parse_metadata(json.dumps(metadata).encode("utf-8"))
 
 
 if __name__ == "__main__":
