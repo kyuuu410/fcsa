@@ -133,12 +133,20 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           import shutil
+          import hashlib
+          import re
           target = Path('_site')
           target.mkdir()
           for name in ('index.html', 'app.js'):
               shutil.copy2(name, target / name)
           for name in ('assets', 'data'):
               shutil.copytree(name, target / name)
+          index = target / 'index.html'
+          def version_script(match):
+              path = match.group(1)
+              digest = hashlib.sha256((target / path).read_bytes()).hexdigest()[:16]
+              return f'<script src="{path}?v={digest}"'
+          index.write_text(re.sub(r'<script src="([^"]+)"', version_script, index.read_text(encoding='utf-8')), encoding='utf-8')
           PY
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
