@@ -28,6 +28,16 @@ window.FCSA_MATCH_RESULTS = {
     {date: '2026-04-25', opponent: 'PS', goalsFor: 3, goalsAgainst: 0, sourceUrl: 'https://www.instagram.com/fc_sorry_appenzeller/p/DXt1oBgEyVM/'},
     {date: '2026-04-18', opponent: '레알 FC', goalsFor: 5, goalsAgainst: 1, sourceUrl: 'https://www.instagram.com/fc_sorry_appenzeller/p/DXWuY4Ak4t8/'},
     {date: '2026-04-11', opponent: 'PS', goalsFor: 0, goalsAgainst: 2, sourceUrl: 'https://www.instagram.com/fc_sorry_appenzeller/p/DXEghm_ExzA/'},
-    {date: '2026-04-04', opponent: 'PS', goalsFor: 7, goalsAgainst: 2, sourceUrl: 'https://www.instagram.com/fc_sorry_appenzeller/p/DWypzKjk_qd/'}
+    {date: '2026-04-04', opponent: 'PS', goalsFor: 7, goalsAgainst: 2, sourceUrl: 'https://www.instagram.com/fc_sorry_appenzeller/p/DWypzKjk_qd/'},
+    {date: '2026-03-28', opponent: 'PS', goalsFor: 2, goalsAgainst: 1, sourceUrl: 'https://www.instagram.com/fc_sorry_appenzeller/p/DWgvZ-Jk3Qt/'},
+    {date: '2026-03-07', opponent: '도이치 FC', goalsFor: 3, goalsAgainst: 6, sourceUrl: 'https://www.instagram.com/fc_sorry_appenzeller/p/DWgvCBckxvN/'},
+    {date: '2026-03-02', opponent: 'FC AlwaysAwake', goalsFor: 3, goalsAgainst: 0, sourceUrl: 'https://www.instagram.com/fc_sorry_appenzeller/p/DVe7soCk1Ig/'},
+    {date: '2026-02-14', opponent: 'PS', goalsFor: 1, goalsAgainst: 2, sourceUrl: 'https://www.instagram.com/fc_sorry_appenzeller/p/DVe7j1yky9d/'},
+    {date: '2026-02-07', opponent: '얼리버드 FC', goalsFor: 7, goalsAgainst: 4, sourceUrl: 'https://www.instagram.com/fc_sorry_appenzeller/p/DUm3a_rEwVT/'},
+    {date: '2026-01-31', opponent: '레알 FC', goalsFor: 0, goalsAgainst: 8, sourceUrl: 'https://www.instagram.com/fc_sorry_appenzeller/p/DUm3KSIE35t/'},
+    {date: '2026-01-24', opponent: 'PS', goalsFor: 1, goalsAgainst: 3, sourceUrl: 'https://www.instagram.com/fc_sorry_appenzeller/p/DUKhLrRE8T6/'},
+    {date: '2026-01-17', opponent: '무명 FC', goalsFor: 4, goalsAgainst: 9, sourceUrl: 'https://www.instagram.com/fc_sorry_appenzeller/p/DTr19xfk7AR/'},
+    {date: '2026-01-10', opponent: 'PS', goalsFor: 1, goalsAgainst: 2, sourceUrl: 'https://www.instagram.com/fc_sorry_appenzeller/p/DTZtuw5E49d/'},
+    {date: '2026-01-03', opponent: 'Wave FC', goalsFor: 2, goalsAgainst: 5, sourceUrl: 'https://www.instagram.com/fc_sorry_appenzeller/p/DTSB1GSk3oH/'}
   ]
 };
