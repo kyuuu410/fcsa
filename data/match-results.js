@@ -1,6 +1,13 @@
 window.FCSA_MATCH_RESULTS = {
-  updatedAt: '2026-09-09',
+  updatedAt: '2026-11-11',
   matches: [
+    {date: '2026-11-07', opponent: 'PS', goalsFor: 2, goalsAgainst: 11, sourceUrl: 'https://www.instagram.com/fc_sorry_appenzeller/p/DfjJCQ_E7eX/'},
+    {date: '2026-10-31', opponent: '이븐도 FC', goalsFor: 3, goalsAgainst: 5, sourceUrl: 'https://www.instagram.com/fc_sorry_appenzeller/p/DfjI31Rkzwg/'},
+    {date: '2026-10-24', opponent: '이오 FC', goalsFor: 5, goalsAgainst: 3, sourceUrl: 'https://www.instagram.com/fc_sorry_appenzeller/p/DfBvONAE2eR/'},
+    {date: '2026-10-17', opponent: 'PS', goalsFor: 0, goalsAgainst: 4, sourceUrl: 'https://www.instagram.com/fc_sorry_appenzeller/p/Deydz0jExhx/'},
+    {date: '2026-10-10', opponent: 'PS', goalsFor: 4, goalsAgainst: 4, sourceUrl: 'https://www.instagram.com/fc_sorry_appenzeller/p/Deg24ugk_Z2/'},
+    {date: '2026-10-03', opponent: 'PS', goalsFor: 6, goalsAgainst: 5, sourceUrl: 'https://www.instagram.com/fc_sorry_appenzeller/p/DeLup2zE8C6/'},
+    {date: '2026-09-19', opponent: 'PS', goalsFor: 3, goalsAgainst: 2, sourceUrl: 'https://www.instagram.com/fc_sorry_appenzeller/p/DdkyrZQE75d/'},
     {date: '2026-09-05', opponent: 'FC 가락', goalsFor: 8, goalsAgainst: 6, sourceUrl: 'https://www.instagram.com/fc_sorry_appenzeller/p/Dc-jX5Lk7yo/'},
     {date: '2026-08-29', opponent: 'PS', goalsFor: 6, goalsAgainst: 0, sourceUrl: 'https://www.instagram.com/fc_sorry_appenzeller/p/Dc-i0tkE7Nl/'},
     {date: '2026-08-15', opponent: 'PS', goalsFor: 1, goalsAgainst: 6, sourceUrl: 'https://www.instagram.com/fc_sorry_appenzeller/p/DcQGGT0kxAk/'},

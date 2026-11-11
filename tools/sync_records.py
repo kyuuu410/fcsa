@@ -18,7 +18,7 @@ from urllib.parse import quote, urlsplit
 from urllib.request import build_opener, HTTPRedirectHandler, Request
 import zipfile
 
-from import_records import import_records
+from import_records import import_records, RecordValidationError
 
 
 DRIVE_MIME_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -277,6 +277,16 @@ def sync_records(output=DEFAULT_OUTPUT, *, environment=None, opener=None, sleep=
                 downloaded.modified_at,
                 _source_title(existing),
             )
+        except RecordValidationError as error:
+            # Report only known error categories, never workbook values or notes.
+            category = "record validation"
+            for prefix in ["Unexpected header", "Missing value", "Formula error", "Expected number", "Invalid number", "Invalid date", "Date mismatch", "Missing required", "Invalid or duplicate player"]:
+                if str(error).startswith(prefix):
+                    category = prefix
+                    break
+            cells = re.findall(r"!([A-Z]{1,3}[1-9][0-9]{0,6})\b", str(error))
+            location = f" (cell {cells[0]})" if cells else ""
+            raise RecordSyncError(f"XLSX validation failed: {category}{location}; previous output was preserved") from None
         except Exception:
             raise RecordSyncError("XLSX validation or import failed; previous output was preserved") from None
         if records.get("source", {}).get("sha256") != downloaded_sha256:

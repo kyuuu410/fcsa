@@ -106,6 +106,31 @@ class FakeOpener:
 
 
 class RecordSyncTests(unittest.TestCase):
+    def test_numberless_roster_preserves_same_name_rows(self):
+        workbook = openpyxl.load_workbook(io.BytesIO(workbook_fixture()))
+        roster = workbook["26년 선수 기록"]
+        roster.delete_cols(2)
+        for column in range(1, 8):
+            roster.cell(3, column, roster.cell(2, column).value)
+        for title in ["26년 출장 기록", "26년 득점 기록", "26년 도움 기록"]:
+            sheet = workbook[title]
+            sheet.insert_rows(3)
+            for column in range(1, 4):
+                sheet.cell(3, column, sheet.cell(2, column).value)
+        output = io.BytesIO()
+        workbook.save(output)
+        workbook.close()
+        from import_records import convert_workbook
+        result = convert_workbook(output.getvalue(), None, None, "fixture.xlsx")
+        self.assertEqual(len(result["players"]), 2)
+        first, second = result["players"]
+        self.assertIsNone(first["number"])
+        self.assertNotEqual(first["id"], second["id"])
+        self.assertEqual(first["goals"], 1)
+        self.assertEqual(first["assists"], 0)
+        self.assertEqual(first["appearances"], 1)
+        self.assertEqual(first["name"], second["name"])
+
     def response(self, content, *, url="https://drive.usercontent.google.com/download", headers=None):
         return FakeResponse(url, content, {"Last-Modified": LAST_MODIFIED, **(headers or {})})
 
@@ -221,7 +246,7 @@ class RecordSyncTests(unittest.TestCase):
             output = Path(directory) / "records.js"
             write_records(output, "2" * 64)
             original = output.read_bytes()
-            with self.assertRaisesRegex(sync.RecordSyncError, "validation or import failed"):
+            with self.assertRaisesRegex(sync.RecordSyncError, r"validation failed: Missing value \(cell D2\)"):
                 self.run_sync(output, content)
             self.assertEqual(output.read_bytes(), original)
 

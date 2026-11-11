@@ -60,8 +60,13 @@ def convert_workbook(content, source_url, modified_at, source_title):
         if any(name not in workbook.sheetnames for name in required_sheets):
             raise RecordValidationError("Missing required 2026 record sheet")
         roster, team, attendance, goals, assists = [workbook[name] for name in required_sheets]
-        for column, name in enumerate(["포지션", "등번호", "이름", "득점", "도움", "공격포인트", "출장횟수", "참석율"], 1):
-            header(roster, f"{openpyxl.utils.get_column_letter(column)}1", name)
+        # Both the original numbered roster and the current numberless roster.
+        numbered = roster["B1"].value == "등번호"
+        fields = ["포지션"] + (["등번호"] if numbered else []) + ["이름", "득점", "도움", "공격포인트", "출장횟수", "참석율"]
+        columns = {name: openpyxl.utils.get_column_letter(index) for index, name in enumerate(fields, 1)}
+        for name, column in columns.items():
+            header(roster, f"{column}1", name)
+        name_column = columns["이름"]
         for sheet in [attendance, goals, assists]:
             header(sheet, "A1", "포지션")
             header(sheet, "B1", "이름")
@@ -71,11 +76,13 @@ def convert_workbook(content, source_url, modified_at, source_title):
         if summary["played"] <= 0 or summary["winRate"] > 1:
             raise RecordValidationError("Invalid season summary")
         notes = []
+        if not numbered:
+            notes.append("원본 선수 기록에 등번호 열이 없어 등번호를 표시하지 않습니다.")
         row = 2
-        while roster.cell(row, 3).value is not None:
+        while roster[f"{name_column}{row}"].value is not None:
             row += 1
         end_row = row - 1
-        if end_row < 2 or any(roster.cell(r, 3).value is not None for r in range(row, roster.max_row + 1)):
+        if end_row < 2 or any(roster[f"{name_column}{r}"].value is not None for r in range(row, roster.max_row + 1)):
             raise RecordValidationError("Missing or discontinuous player rows")
         total_row = end_row + 1
         for sheet in [attendance, goals, assists]:
@@ -105,19 +112,23 @@ def convert_workbook(content, source_url, modified_at, source_title):
         players = []
         seen_numbers = set()
         seen_names = set()
+        name_occurrences = {}
         for row in range(2, end_row + 1):
             position = require_value(roster, f"A{row}")
-            name = require_value(roster, f"C{row}")
-            shirt_number = number(roster, f"B{row}")
-            if position not in ROLES or not isinstance(name, str) or name in seen_names or shirt_number in seen_numbers:
+            name = require_value(roster, f"{name_column}{row}")
+            shirt_number = number(roster, f"{columns['등번호']}{row}") if numbered else None
+            if position not in ROLES or not isinstance(name, str) or (numbered and name in seen_names) or (shirt_number is not None and shirt_number in seen_numbers):
                 raise RecordValidationError(f"Invalid or duplicate player: row {row}")
             seen_numbers.add(shirt_number)
+            if name in seen_names:
+                notes.append(f"선수 기록 행 {row}에 같은 이름이 있습니다. 별도 행으로 보존했습니다.")
             seen_names.add(name)
+            name_occurrences[name] = name_occurrences.get(name, 0) + 1
             for sheet in [attendance, goals, assists]:
                 header(sheet, f"A{row}", position)
                 header(sheet, f"B{row}", name)
-            player = {"id": f"player-{shirt_number}", "name": name, "number": shirt_number, "position": position, "role": ROLES[position]}
-            player.update({key: number(roster, f"{column}{row}", key != "attendanceRate") for key, column in {"goals": "D", "assists": "E", "points": "F", "appearances": "G", "attendanceRate": "H"}.items()})
+            player = {"id": f"player-{shirt_number}" if numbered else "player-name-" + hashlib.sha256(name.encode("utf-8")).hexdigest()[:16] + f"-{name_occurrences[name]}", "name": name, "number": shirt_number, "position": position, "role": ROLES[position]}
+            player.update({key: number(roster, f"{column}{row}", key != "attendanceRate") for key, column in {key: columns[label] for key, label in {"goals": "득점", "assists": "도움", "points": "공격포인트", "appearances": "출장횟수", "attendanceRate": "참석율"}.items()}.items()})
             if player["attendanceRate"] > 1:
                 raise RecordValidationError(f"Invalid attendance rate: row {row}")
             records = []
@@ -137,9 +148,9 @@ def convert_workbook(content, source_url, modified_at, source_title):
                 if detail != player[key]:
                     notes.append(f"{name}의 {METRIC_LABELS[key]} 공식 합계({player[key]})와 날짜별 합계({detail})가 다릅니다 ('26년 선수 기록' 행 {row}).")
             if player["points"] != player["goals"] + player["assists"]:
-                notes.append(f"{location(roster, f'F{row}')} 공격포인트와 득점·도움 합계가 다릅니다.")
+                notes.append(f"{location(roster, f"{columns['공격포인트']}{row}")} 공격포인트와 득점·도움 합계가 다릅니다.")
             if not math.isclose(player["attendanceRate"], player["appearances"] / summary["played"], abs_tol=1e-9):
-                notes.append(f"{location(roster, f'H{row}')} 참석율과 출장횟수/전적이 다릅니다.")
+                notes.append(f"{location(roster, f"{columns['참석율']}{row}")} 참석율과 출장횟수/전적이 다릅니다.")
             players.append(player)
         for index, record in enumerate(dates):
             column_letter = openpyxl.utils.get_column_letter(date_columns[index])
@@ -176,7 +187,7 @@ def convert_workbook(content, source_url, modified_at, source_title):
             notes.append("원본 시즌 승률과 승리/전적이 다릅니다.")
         detailed_goals = sum(player["goals"] for player in players)
         if detailed_goals != summary["goalsFor"]:
-            notes.append(f"공식 팀 득점은 {summary['goalsFor']}골('26년 팀 기록'!B7), 선수별 득점 합계는 {detailed_goals}골('26년 선수 기록'!D2:D{end_row})입니다. 차이를 보정하지 않았습니다.")
+            notes.append(f"공식 팀 득점은 {summary['goalsFor']}골('26년 팀 기록'!B7), 선수별 득점 합계는 {detailed_goals}골('26년 선수 기록'!{columns['득점']}2:{columns['득점']}{end_row})입니다. 차이를 보정하지 않았습니다.")
         notes.append("날짜별 상대팀·실점·경기 결과·쿼터 기록은 원본에 없어 제공하지 않습니다.")
         return {"version": 1, "season": 2026, "source": {"title": source_title, "modifiedAt": modified_at, "importedAt": datetime.now(timezone.utc).isoformat(), "sha256": hashlib.sha256(content).hexdigest()}, "summary": summary, "players": players, "dates": dates, "opponents": opponents, "qualityNotes": notes}
     finally:
