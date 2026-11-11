@@ -117,6 +117,9 @@ class RecordSyncTests(unittest.TestCase):
             sheet.insert_rows(3)
             for column in range(1, 4):
                 sheet.cell(3, column, sheet.cell(2, column).value)
+        roster["H1"] = "비고"
+        roster["H2"] = "문과 / private-note-one"
+        roster["H3"] = "이과 / private-note-two"
         output = io.BytesIO()
         workbook.save(output)
         workbook.close()
@@ -129,7 +132,9 @@ class RecordSyncTests(unittest.TestCase):
         self.assertEqual(first["goals"], 1)
         self.assertEqual(first["assists"], 0)
         self.assertEqual(first["appearances"], 1)
-        self.assertEqual(first["name"], second["name"])
+        self.assertEqual(first["name"], "테스트 선수(문과)")
+        self.assertEqual(second["name"], "테스트 선수(이과)")
+        self.assertNotIn("private-note", json.dumps(result, ensure_ascii=False))
 
     def response(self, content, *, url="https://drive.usercontent.google.com/download", headers=None):
         return FakeResponse(url, content, {"Last-Modified": LAST_MODIFIED, **(headers or {})})

@@ -109,6 +109,7 @@ def convert_workbook(content, source_url, modified_at, source_title):
             date_columns.append(column)
         if not dates:
             raise RecordValidationError("No dated records")
+        note_columns = [column for column in range(1, roster.max_column + 1) if roster.cell(1, column).value == "비고"]
         players = []
         seen_numbers = set()
         seen_names = set()
@@ -128,6 +129,12 @@ def convert_workbook(content, source_url, modified_at, source_title):
                 header(sheet, f"A{row}", position)
                 header(sheet, f"B{row}", name)
             player = {"id": f"player-{shirt_number}" if numbered else "player-name-" + hashlib.sha256(name.encode("utf-8")).hexdigest()[:16] + f"-{name_occurrences[name]}", "name": name, "number": shirt_number, "position": position, "role": ROLES[position]}
+            # Only the user-approved disambiguators may leave the private notes column.
+            if len(note_columns) == 1:
+                note = str(roster.cell(row, note_columns[0]).value or "")
+                tracks = [track for track in ("문과", "이과") if track in note]
+                if len(tracks) == 1:
+                    player["name"] = f"{name}({tracks[0]})"
             player.update({key: number(roster, f"{column}{row}", key != "attendanceRate") for key, column in {key: columns[label] for key, label in {"goals": "득점", "assists": "도움", "points": "공격포인트", "appearances": "출장횟수", "attendanceRate": "참석율"}.items()}.items()})
             if player["attendanceRate"] > 1:
                 raise RecordValidationError(f"Invalid attendance rate: row {row}")
