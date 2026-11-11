@@ -118,10 +118,10 @@ jobs:
       - name: Fetch current channel videos
         id: videos
         if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.use_saved_videos == true) }}
-        continue-on-error: ${{ needs.sync-records.outputs.changed == 'true' }}
+        continue-on-error: ${{ github.event_name == 'push' || needs.sync-records.outputs.changed == 'true' }}
         run: python tools/update_videos.py
       - name: Preserve published videos while publishing new records
-        if: steps.videos.outcome == 'failure' && needs.sync-records.outputs.changed == 'true'
+        if: steps.videos.outcome == 'failure' && (github.event_name == 'push' || needs.sync-records.outputs.changed == 'true')
         run: python tools/update_videos.py --restore-published
       # Ordinary video refresh failures still leave the previous deployment in place.
       - name: Use saved channel videos for this manual deployment
@@ -160,3 +160,4 @@ jobs:
       - name: Publish site
         id: deployment
         uses: actions/deploy-pages@v4
+
