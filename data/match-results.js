@@ -1,6 +1,7 @@
 window.FCSA_MATCH_RESULTS = {
-  updatedAt: '2026-11-12',
+  updatedAt: '2026-11-23',
   matches: [
+    {date: '2026-11-14', opponent: 'PS', goalsFor: 2, goalsAgainst: 9, sourceUrl: 'https://www.instagram.com/fc_sorry_appenzeller/p/Df9cLDDk14Z/'},
     {date: '2026-11-07', opponent: 'PS', goalsFor: 2, goalsAgainst: 11, sourceUrl: 'https://www.instagram.com/fc_sorry_appenzeller/p/DfjJCQ_E7eX/'},
     {date: '2026-10-31', opponent: '이븐도 FC', goalsFor: 3, goalsAgainst: 5, sourceUrl: 'https://www.instagram.com/fc_sorry_appenzeller/p/DfjI31Rkzwg/'},
     {date: '2026-10-24', opponent: '이오 FC', goalsFor: 5, goalsAgainst: 3, sourceUrl: 'https://www.instagram.com/fc_sorry_appenzeller/p/DfBvONAE2eR/'},
